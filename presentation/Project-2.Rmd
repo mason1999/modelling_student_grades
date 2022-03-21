@@ -1,0 +1,255 @@
+---
+title: "Project 2"
+author: "Team"
+date: "17/10/2021"
+output: 
+  html_document: 
+    toc: yes
+    fig_caption: yes
+    toc_float:
+      collapsed: no
+    code_folding: hide
+    df_print: paged
+---
+
+## Init libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggfortify)
+library(ggfortify)
+library(GGally)
+library(sjPlot)
+```
+
+## Load and transform
+
+1. Load data
+2. Transform data into factors (excluding `G3`, `age` and `absences`)
+
+
+```{r load data}
+#load data
+dat_raw <- read.table("data/student-por.csv",sep=";",header=TRUE) %>% select(-G1, -G2)
+glimpse(dat_raw)
+#data into factors
+#factor_columns <- names(dat_raw %>% select(-G3, -age, -absences))
+factor_columns <- names(dat_raw %>% select(-G3, -age, -absences, -famrel, -traveltime, -studytime, -freetime, -goout, -Walc, -Dalc, -health, -failures, -Medu, -Fedu))
+
+#factorise and log for absences
+dat <- dat_raw %>% 
+  mutate_at(factor_columns, as.factor) %>%
+  mutate(log_absences = log(absences+1)) %>% 
+  select(-absences)
+
+#all numeric variables in the dataset
+numeric_columns <- names(dat %>% select (G3, age, log_absences, famrel, traveltime, studytime, freetime, goout, Walc, Dalc, health, failures, Medu, Fedu))
+
+
+
+#data with numeric varibles
+dat_numeric <- dat %>% 
+ select(all_of(numeric_columns))
+
+#glimpse(dat_numeric)
+
+```
+
+
+
+## Review continious variables
+
+```{r view data}
+boxplot(scale(dat_numeric))
+
+```
+
+
+```{r, warning=FALSE, fig.width=10,fig.height=16, message=FALSE}
+# Create long data for lm
+dat_numeric <- dat_numeric %>% 
+  mutate(ID = row_number())
+
+dat_long_vars_no_G3 <- dat_numeric %>%
+  select(-G3) %>% 
+  pivot_longer(
+    !ID,
+    names_to = "var",
+    values_to = "val"
+)
+
+dat_long <- left_join(
+  dat_numeric %>% select(ID, G3),
+  dat_long_vars_no_G3,
+  by = "ID"
+) %>% select(-ID)
+
+
+#check linearity for numerical variables
+ggplot(dat_long, aes(x = val, y = G3)) +
+  geom_point() + theme_classic(base_size = 12) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~var, ncol = 3, scales = "free_x")
+
+
+#ggplot(dat_numeric, aes(x = absences, y = G3)) +
+#geom_point() + theme_classic(base_size = 12) +
+#labs(x = "Absences", y = "Final grade") +
+#geom_smooth(method = "loess", se = FALSE)   
+
+```
+
+
+## Regression
+
+### On all data
+
+``` {r reg}
+model_full = lm(formula = G3 ~ ., data = dat)  #regression on all data
+summary(model_full)
+```
+
+```{r}
+plot(model_full)
+```
+
+
+### Backward regression
+
+``` {r reg backward}
+#backward selection on all data
+model_backward <- step(model_full, direction = "backward", trace = FALSE)
+summary(model_backward)
+#anova for checking significance of categorical variables
+anova (model_backward)
+```
+
+### Forward regression
+
+```{r}
+model_null = lm(G3 ~ 1, data = dat) # Null model
+
+#forward selection on all data
+model_forward <- step(model_null, scope = list(lower = model_null, upper = model_full), direction = "forward", trace = FALSE)
+summary(model_forward)
+
+anova(model_forward)
+```
+
+
+```{r}
+#drop after step for forward
+# drop1(model_forward, test = "F")
+# model_forward_drop = update(model_forward, .~. - age)
+# summary(model_forward_drop)
+# 
+# #drop after step for backward
+# drop1(model_backward, test = "F")
+# model_backward_drop = update(model_backward, .~. -famrel)
+# summary(model_backward_drop)
+```
+
+### Add and Drop after step
+
+```{r}
+#drop after step for backward
+drop1(model_backward, test = "F")
+
+# find the guardian is the least siginificant and drop it
+model_backward_drop = update(model_backward, .~. - guardian)
+
+#add after step for forward
+add1(model_forward, test = "F", scope = model_full)
+
+# find the log_absences is the largest siginificant and add it
+model_forward_add = update(model_forward, .~. + log_absences)
+```
+
+### Drop from full model
+```{r}
+drop1(model_full, test = "F")
+model_full_drop = update(model_full, .~.-Medu)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-famsup)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-traveltime)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-Walc)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-reason)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-Pstatus)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-goout)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-paid)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-Fedu)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-nursery)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-address)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-log_absences)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-activities)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-famsize)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-internet)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-freetime)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-famrel)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-Fjob)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-guardian)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-age)
+drop1(model_full_drop, test = "F")
+model_full_drop = update(model_full_drop, .~.-romantic)
+drop1(model_full_drop, test = "F")
+```
+
+
+```{r}
+summary(model_full_drop)
+extractAIC(model_full_drop)
+```
+
+
+
+### Assuptions checking
+
+```{r}
+autoplot(model_backward, 1:2)
+autoplot(model_forward, 1:2)
+
+```
+
+```{r}
+
+```
+
+
+### Forward and backward comparison
+
+```{r}
+# no need to comapre this?
+tab_model(model_forward, model_backward,model_backward_drop, model_forward_add,
+#show.ci = FALSE,
+show.aic = TRUE,
+show.r2 = TRUE,
+#show.est = TRUE,
+dv.labels = c("Forward model", "Backward model", "Backward drop model", "Forward add model")
+)
+```
+
+
+
+
+
+
+

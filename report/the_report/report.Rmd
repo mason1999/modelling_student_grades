@@ -1,0 +1,357 @@
+---
+title: The variables which affect the academic success of a student
+# Use letters for affiliations
+author:
+  - name: Sura Majeed
+  - name: Junhao Liu
+  - name: Elena Skorokhodova
+  - name: Mason Wong
+  - name: Hoang Dao
+address:
+  - code: 
+    address: University of Sydney 
+# Optional: line of arbitrary text with additional information.
+# Could be used, for example, to mention the bibliographic info in a post-print.
+# If not specified, defaults to "This version was compiled on \today"
+#date_subtitle: Published in *Journal of Statistical Software*, 2018
+
+# Abstract
+abstract: |
+  This report analyses students’ performance in Portuguese using statistical methods to understand relevant factors that affect students’ final grades. The report aims to help students and school faculty understand which factors can be changed to predict and improve student performance. The dataset was analysed using multiple linear regression and various model selection approaches to obtain the best model. The optimal model found that various social and familial factors could heavily influence student performance. Schools can apply these results by understanding and targeting the factors found to affect students’ failure rates. 
+
+# Paper size for the document, values of letter and a4
+papersize: letter
+
+# Font size of the document, values of 9pt (default), 10pt, 11pt and 12pt
+fontsize: 9pt
+
+always_allow_html: true
+
+
+# Optional: Force one-column layout, default is two-column
+#one_column: true
+
+# Optional: Enables lineno mode, but only if one_column mode is also true
+#lineno: true
+
+# Optional: Enable one-sided layout, default is two-sided
+#one_sided: true
+
+# Optional: Enable section numbering, default is unnumbered
+#numbersections: true
+
+# Optional: Specify the depth of section number, default is 5
+#secnumdepth: 5
+
+# Optional: Skip inserting final break between acknowledgements, default is false
+skip_final_break: true
+
+# Optional: Bibliography 
+bibliography: ../../bibliography/bibliography.bib
+csl: ../../bibliography/institute-of-mathematical-statistics.csl
+
+# Optional: Enable a 'Draft' watermark on the document
+#watermark: true
+
+# Customize footer, eg by referencing the vignette
+# footer_contents: "YourPackage Vignette"
+
+# Produce a pinp document
+output: pinp::pinp
+
+# Required: Vignette metadata for inclusion in a package.
+vignette: >
+  %\VignetteIndexEntry{YourPackage-vignetteentry}
+  %\VignetteKeywords{YourPackage, r, anotherkeyword}
+  %\VignettePackage{YourPackage}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      include = TRUE, 
+                      warning = FALSE, 
+                      message = FALSE, 
+                      tidy = TRUE, 
+                      tidy.opts = list(width.cutoff=100), 
+                      fig.width = 6, 
+                      fig.height = 4, 
+                      fig.align = "center", 
+                      size = "footnotesize")
+
+library(tidyverse)
+library(ggfortify)
+library(GGally)
+library(ggthemes)
+library(gridExtra)
+library(caret)
+library(knitr)
+library(gtable)
+library(grid)
+
+#load data
+dat_raw <- read.table("../data/student-por.csv",sep=";",header=TRUE) %>% select(-G1, -G2)
+# glimpse(dat_raw)
+
+#data into factors
+#factor_columns <- names(dat_raw %>% select(-G3, -age, -absences))
+factor_columns <- names(dat_raw %>% select(-G3, -age, -absences, -famrel, -traveltime, -studytime, -freetime, -goout, -Walc, -Dalc, -health, -failures, -Medu, -Fedu))
+
+#factorise and log for absences
+dat <- dat_raw %>% 
+  mutate_at(factor_columns, as.factor) %>%
+  mutate(log_absences = log(absences+1)) %>% 
+  select(-absences)
+
+#all numeric variables in the dataset
+numeric_columns <- names(dat %>% select (G3, age, log_absences, studytime, freetime, failures, Medu, Fedu, health, goout, Walc, Dalc, goout, traveltime, famrel))
+
+
+
+#data with numeric varibles
+dat_numeric <- dat %>% 
+ select(all_of(numeric_columns))
+
+model_full = lm(formula = G3 ~ ., data = dat)
+
+
+#backward selection on all data
+model_backward <- step(model_full, direction = "backward", trace = FALSE)
+
+
+model_null = lm(G3 ~ 1, data = dat) # Null model
+
+#forward selection on all data
+model_forward <- step(model_null, scope = list(lower = model_null, upper = model_full), direction = "forward", trace = FALSE)
+```
+
+
+## Introduction 
+
+A student's performance is not only affected by intelligence or effort but also could be influenced by other factors. The Portuguese secondary educational system faces a problem of high failure rates for students in fundamental language courses. In an effort to investigate the system's potential drawbacks, this report aims to examine student performance in the Portuguese language against different demographic, social, familial and school-related factors and find the key variables that influence educational success. An outcome of the report would assist in a thorough assessment of students' abilities and achievements in secondary education, allowing the schools to improve the education quality and target corrective measures with the overall goal to lower students' high failure rates.
+
+
+## Data description
+The data was obtained from 2 sources, a questionnaire with 37 closed questions and mark reports for students from 2 Portuguese public secondary schools.The data was collected in years 2005-2006 over the school year and contains 649 observations. The independent variable is the final grade (last evaluation in the school year) with a 20-point grading scale. In the cleaning process of this data we used factor() on the nominal categorical variables and left ordinal ones as numeric. The reasons behind this are to maintain the importance of order in these variables, and to simplify the interpretation (Kassambara, 2018).
+
+## Analysis 
+We begin with the analysis of the full model containing 30 dependent variables. 
+All of the variables plotted exhibited relatively linear relationships, with the data distributed evenly around their respective line of best fit, fulfilling the linearity assumption. Figure 1 demonstrates the linearity for 6 variables with the rest exibiting the same pattern. The experiment was designed so that each student's responses were a different observation. There is nothing to suggest that these students' outcomes depend on one another; therefore, the independence assumption is not violated.\linebreak
+
+```{r, echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', fig.cap = "Checking linearity assupmtion for full model"}
+
+# Create long data for lm
+dat_numeric <- dat_numeric %>% 
+  mutate(ID = row_number())
+dat_long_vars_no_G3 <- dat_numeric %>%
+  select(-G3, -traveltime, -freetime, -Medu, -Fedu, -failures, -health, -Dalc) %>% 
+  pivot_longer(
+    !ID,
+    names_to = "var",
+    values_to = "val"
+)
+dat_long <- left_join(
+  dat_numeric %>% select(ID, G3),
+  dat_long_vars_no_G3,
+  by = "ID"
+) %>% select(-ID)
+
+#check linearity for numerical variables
+ggplot(dat_long, aes(x = val, y = G3)) +
+  geom_point(colour = "white") +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~var, ncol = 3, scales = "free_x")+ 
+  theme_solarized(light = FALSE, base_size = 8) +
+  labs(colour = "white")
+
+```
+
+
+There does not seem to be any trends in the plot of the fitted vs residuals; there is some concern around the bottom left but not enough to violate the homoscedasticity assumption. Furthermore, linearity in fitted vs residuals seems not violated. The QQ plot shows that most of the data is close to the line except for the very bottom of the graph, which is heavily skewed. However, the Central Limit Theorem ensures that all inferences are still valid (Figure 2).\linebreak
+
+```{r echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', fig.cap = "Checking homoscedasticity and normality assupmtions for full model"}
+
+dtplot <- data.frame(
+  fitted = model_full$fitted.values,
+  Residuals = model_full$residuals
+)
+homo <- dtplot %>% ggplot()+
+  aes(x=fitted, y = Residuals) +
+  geom_point(colour = "white") +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_solarized(light = FALSE, base_size = 8) +
+  labs(colour = "white") +
+  theme(axis.text.x = element_text(colour = "white"), axis.text.y = element_text(colour = "white"))
+
+
+qq <- dtplot %>% ggplot() +
+  aes(sample= Residuals)+
+  geom_qq(colour = "white")+
+  geom_qq_line(colour = "pink")+
+  theme_solarized(light = FALSE, base_size = 8) +
+  labs(colour = "white") +
+  theme(axis.text.x = element_text(colour = "white"), axis.text.y = element_text(colour = "white"))
+
+grid.arrange(homo, qq, ncol=2)
+```
+
+To find the best model, first, we applied in sample approach using backward and forward stepwise selection (Figure 3). We used the minimisation of the AIC criterion as the most widely used method for model selection. After forward and backward selection, we ended up with two different models with much smaller AIC than the full model.\linebreak 
+
+```{r echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', fig.cap = "Backward selection using AIC minimisation"}
+
+data.frame(AIC = model_backward$anova$AIC) %>%
+  mutate(step = row_number()) %>% 
+  ggplot() +
+    geom_line(aes(x = step, y = AIC), colour = "white") +
+    theme_solarized(light = FALSE, base_size = 8) +
+    labs(colour = "white") +
+    theme(
+      axis.text.x = element_text(colour = "white"),
+      axis.text.y = element_text(colour = "white")
+    )
+```
+
+
+## Results
+
+Through these comparisons, the backward model has the least AIC and the biggest adjusted R squared value (Figure 4). Therefore, it suggests that the backward model is better for predicting and explaining the observed grade value. Moreover, results of the out of sample approach using 7-fold cross-validation demonstrated that RMSE and MAE are smaller for the backward model, which increases our confidence in using this model (Figure 5).\linebreak
+
+\begin{figure}[h]
+```{r echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', tab.cap = "Models summary"}
+
+tab <- matrix(c(  round(summary(model_forward)$r.squared, 3) , round(summary(model_backward)$r.squared, 3), round(AIC(model_forward),3) ,   round(AIC(model_backward), 3)), ncol=2, byrow=TRUE)
+colnames(tab) <- c('Forward model', 'Backward model')
+rownames(tab) <- c('R2','AIC')
+tab <- as.table(tab)
+
+
+g <- tableGrob(tab)
+g <- gtable_add_grob(g,
+        grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+        t = 2, b = nrow(g), l = 1, r = ncol(g))
+
+g <- gtable_add_grob(g,
+        grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+        t = 1, l = 1, r = ncol(g))
+grid.draw(g)
+
+```
+\caption{Models Summary}
+\end{figure}
+
+```{r echo=FALSE}
+set.seed(5)
+cv_settings = trainControl(method = "cv",
+                           number = 7,
+                           verboseIter = FALSE)
+
+cv_back = train(model_backward$call$formula,
+                dat,
+                method = "lm",
+                trControl =  cv_settings)
+
+cv_fwd = train(model_forward$call$formula,
+               dat,
+               method = "lm",
+               trControl =  cv_settings)
+
+
+results = resamples(list(backward = cv_back, forward = cv_fwd))
+```
+
+```{r echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', fig.cap = "RMSE comparison for forward and backward models"}
+#gg3<-ggplot(results, aes('RMSE', colour = "models") )
+
+ggplot(results, metric = "RMSE") +
+  labs(y = "RMSE") +
+  theme_solarized(light = TRUE, base_size = 8)
+  
+
+```
+
+```{r echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', fig.cap = "MAE"}
+#ggplot(results, metric = "MAE") + labs(y = "MAE") + theme_solarized(light = TRUE, base_size = 8)
+```
+
+
+Checking assumptions for our final model, the residuals plot does not seem to show any strong pattern, which indicates that neither the linearity nor homoscedasticity assumption is violated. The QQ plot has some concern around the lower tail, but the CLT ensures all inferences are still valid (Figure 6). Lastly, an Anova test on the regression showed us that all the predictors in our final model are significant.\linebreak
+
+```{r echo=FALSE, fig.width=3.2, fig.height=2, fig.align='centre', fig.cap = "Checking homoscedasticity and normality assupmtions for final model"}
+dtplot2 <- data.frame(
+  fitted = model_backward$fitted.values,
+  Residuals = model_backward$residuals
+)
+homo2 <- dtplot2 %>% ggplot()+
+  aes(x=fitted, y = Residuals) +
+  geom_point(colour = "white") +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_solarized(light = FALSE, base_size = 8) +
+  labs(colour = "white") +
+  theme(axis.text.x = element_text(colour = "white"), axis.text.y = element_text(colour = "white"))
+qq2 <- dtplot2 %>% ggplot() +
+  aes(sample= Residuals)+
+  geom_qq(colour = "white")+
+  geom_qq_line(colour = "pink")+
+  theme_solarized(light = FALSE, base_size = 8) +
+  labs(colour = "white") +
+  theme(axis.text.x = element_text(colour = "white"), axis.text.y = element_text(colour = "white"))
+
+grid.arrange(homo2, qq2, ncol=2)
+```
+
+
+Our final fitted model:
+$Grade = 8.84 + (-1.50) failures + (-1.43) schoolMS + (1.90) higheryew + (0.43) studytime + (-1.31) schoolsupyes + (-0.39) Dalc + (-0.17) health + (-0.55) sexM + (-0.44) romenticyes + (0.16) age + (0.30) Medu + (-0.47) guardianMother + (-0.04) guardianOther$ \linebreak
+
+Interpreting the most interesting estimated coefficients, we can conclude the following. 
+On average, holding all other variables constant, one unit increase in the number of failures results in a 1.5 unit decrease in grade. On average, holding all other variables constant, a level increase in mother education results in a 0.30 unit increase in grade. On average, holding the other variables constant, if a student wants to take higher education, there is a 1.90 unit increase in grade.
+On average, holding all other variables constant, one unit increase in health status results in a 0.17 unit decrease in grade. High achieving students are shown to have poor health, and it is reasonable to consider that students with higher grades get poor health because of studying late or overstudying. Moreover, one more possible explanation could be the very subjective nature of the answers.\linebreak
+
+## Discussion and conclusion
+We have found that our linear model explains 31.5% of the observed variation in the final grade.
+The analysis demonstrated that past failures are the most significant predictor similar to another research (Cortez and Silva, 2008). Our model had great diversity in predictor variables, including school-related, family and social variables. \linebreak
+
+As a result, we can conclude that other factors (social and familial) could influence the students' academic performance and could be targeted to decrease failure rates. For example, one of the significant predictors was whether the student wanted to continue education or not. So, the schools could provide more information to students about possibilities and benefits if they continue their education. \linebreak
+
+Finally, our project has several limitations, including linear regression utilisation. However, more complicated methods such as random forest or neural networks could potentially produce better results (Cortez and Silva, 2008). Moreover, we used data on only two particular schools, which can produce specific results. Therefore, future studies might increase the scope of the research looking at a more diverse school range. Lastly, there are probably interactions between the variables which could affect the results.\linebreak
+
+## Github
+The following link is the link to our github repository. Clone it and see our work for yourselves!
+
+https://github.sydney.edu.au/jliu7095/LAB-02-CC_early_4.git \linebreak
+ 
+
+## References
+\small
+- Cortez, P., & Silva, A. M. G., 2008, _Using data mining to predict secondary school student performance_, viewed 20th October 2021, <http://www3.dsi.uminho.pt/pcortez/student.pdf>
+
+- Kassambara, A, 2018, _Regression with Categorical Variables: Dummy Coding Essentials in R_, viewed 22nd October 2021, <http://www.sthda.com/english/articles/40-regression-analysis/163-regression-with-categorical-variables-dummy-coding-essentials-in-r/>
+
+- R Core Team, 2021, _A language and environment for statistical computing. R Foundation for Statistical Computing_, viewed 13th November 2021, <https://www.R-project.org/>
+
+- Wickham H, Averick M, Bryan J, Chang W, McGowan LD, François R, Grolemund G, Hayes A, Henry L, Hester J, Kuhn M, Pedersen TL, Miller E, Bache SM, Müller K, Ooms J, Robinson D, Seidel DP, Spinu V, Takahashi K, Vaughan D, Wilke C, Woo K, Yutani H, 2019, _Welcome to the tidyverse_, Journal of Open Source Software, 4(43), 1686. doi: 10.21105/joss.01686, viewed 13th November 2021
+
+- Horikoshi M, Tang Y, 2018, _ggfortify: Data Visualization Tools for Statistical Analysis Results_, viewed 13th November 2021, <https://CRAN.R-project.org/package=ggfortify>
+
+- Wickham H, 2016, _ggplot2: Elegant Graphics for Data Analysis_, pringer-Verlag New York. ISBN 978-3-319-24277-4, viewed 13th November 2021, <https://ggplot2.tidyverse.org>
+
+- Kuhn, M. 2008, _Building Predictive Models in R Using the caret Package_, Journal of Statistical Software, 28(5), 1 - 26. doi, viewed on 13th November 2021, <http://dx.doi.org/10.18637/jss.v028.i05>
+
+- Xie, Y. 2015, _Dynamic Documents with R and knitr_, 2nd edition. Chapman and Hall/CRC, Boca Raton, Florida. ISBN 978-1498716963, viewed on 13th November 2021, <https://yihui.org/knitr/>
+
+- Baptiste Auguie, 2015, _gridExtra: Miscellaneous Functions for "Grid" Graphics_, R package version 2.0.0, viewed on 13th November 2021, <http://CRAN.R-project.org/package=gridExtra>
+
+
+<!-- pandoc writes all tables using longtable, which fails in 2-column mode
+
+  Species                    CBS     CV     G3
+  ----------------------- ------ ------ ------
+  1\. Acetaldehyde           0.0    0.0    0.0
+  2\. Vinyl alcohol          9.1    9.6   13.5
+  3\. Hydroxyethylidene     50.8   51.2   54.0
+
+  : Comparison of the fitted potential energy surfaces and ab initio
+  benchmark electronic energy calculations
+
+-->
+
